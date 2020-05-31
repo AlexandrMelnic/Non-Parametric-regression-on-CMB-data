@@ -1,2 +1,2 @@
-# SL_JournalClub_G17
+# SL Journal Club G17
 R code and data 
