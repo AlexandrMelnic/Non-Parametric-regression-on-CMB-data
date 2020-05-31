@@ -1,0 +1,230 @@
+---
+title: "Non Parametric  Inference With CMB data"
+author: "Group 17"
+date: "5/23/2020"
+output: html_document
+---
+
+```{r include=FALSE}
+library(latex2exp)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra)
+theme_set(theme_bw())
+```
+
+## Abstract
+The aim of this simulation is to estimate the function that represents the observed cosmic microwave backgroud (CMB) provided by the WMAP experiment, through a nonparametric regresion. In details, we start from the observed power spectrum $\hat{C_l} = C_l + \epsilon_l$, which is afflicted by a normal distributed error $\epsilon\sim N(0,\sigma^2_l)$ with $\sigma_l^2$ known, and we try to estimate the $f(l)\equiv C_l$ following some steps: after make some assumptions on the spectrum power, we can expand in series the function, then we can implement the very normal mean and finally we introduce the modulators.
+
+## Introduction
+As first step we import data and take a look at it. We are particularly interested in the power spectrum observations ($C_l$) and in the standard error of each observation ($\textit{se}$)
+
+```{r echo=FALSE}
+data <- read.csv("~/Google Drive/DS/First Year - Secon Semester/SL/journal club/data/space.txt", sep="")
+str(data)
+```
+```{r echo=FALSE, fig.height=6, fig.width=14}
+g1 <- ggplot( data, aes( x = ell, y = Cl ) ) + 
+  geom_point(colour = 'dodgerblue2', alpha = 0.5) + 
+  labs(x = 'Multipole l', y = TeX('$\\hat{C_l}$')) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ggtitle('Observed Power Spectrum')
+
+g2 <- ggplot( data, aes( x = ell, y = se) ) + 
+  geom_line(size = 1.3, colour = 'tomato2') + 
+  labs(x = 'Multipole l', y = 'se') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ggtitle('Standard Error')
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+To simplify our work, we can normalize ($l$) in the segment $[0,1]$ dividing it by its $\max$. We know that $l = \{2,3,...,900\}$, so $L_\max = 900$, from now on, we call the normalized $l$ as follow $x_i=\frac{l_i}{L_\max}$. Finally we can rewrite (changing just notation) our $\hat{C_l}$ function as follow $Y_i = f(x_i) + \sigma_i\epsilon_i$ with $\epsilon\sim{N(0,1)}$
+
+```{r}
+l = data$ell
+L.max = max(data$ell)
+x = l/L.max
+
+y = data$Cl
+
+se = data$se
+
+n = nrow(data)
+```
+
+## Nonparametric regression
+
+We suppose that our function belongs to the $L_2$ space in the interval $[0,1]$ and more specifically to a Sobolev space. Under this sapce it is possible to expand in series our function using an orthonormal set of functions. We choose the $\textbf{cosine basis:}$ $\phi_0(x) = 1, \phi_j(x)=\sqrt2\cos(j\pi x)$. If the function is $\textbf{very smooth}$ then the coefficients decay fast. Thanks to this property of the cosine basis, it is possible to approximate the real function as its $\textbf{partial sum:} \ \ f(x) \approx f_n(x)=\sum_{j=1}^{n} \theta_j \phi_j(x)$, where the $\theta_j$ are the Fourier coefficients and can be estimated as follow: $Z_j = \sum_{j=1}^nY_i\phi_j(x_i)$. It is possible to show that it is asymptotically normal: $Z\approx{N_n(\theta,\sum_n)}$. In this way, instead of having a regression problem, we have to estimate the mean vector of a normal random vector, with knwon $\sum_n$.
+
+```{r}
+# cosine basis:
+cos.j = function(j,x){
+   1*(j==0)  +  sqrt(2)*cos(pi*j*x)*(j>0)
+}
+
+# Fourier parameters estimation (our Z_j):
+z = rep(NA, n)
+for(i in 1:n){
+  z[i] =   1/n*sum(y*cos.j(i - 1,x))
+}
+```
+
+We know thata the MLE estimator is $Z$, but in terms of risk this is not the best choice. We have already supposed that our set of functions is in the Sobolev ellipsoid whose parameter space is $\Theta(m,c) = \{\theta: \sum_j a_j^2 \theta_j^2 \le c^2\}$, with $a_j^2\sim(\pi j)^{2m}$. The Pinsker's theorem says that in this space the risk goes to zero with a rate of $n^{-2m/(2m+1)}$. 
+
+## Linear Estimators
+
+Assuming that the real function has homogeneous smoothness over all its domain, $\textbf{linear estimators}$ usually achieve the $\textbf{minmax risk}$. We will focus our attention on the $\textbf{nested subset selection modulator class}$, where the estimators has the following shape $\hat{\theta_j}=w_jZ_j$ and the modulator vector $w$ has value euqal to 1 till a given J and then 0 ($w = (1,...,1,0,...,0)$). This estimators (for the functions in the ellipsoid) can achieve the minmax risk with $a_j\to\infty$. 
+The estimaator we will use the following: $\hat{R_J}(\hat\theta)=\sum_{j\leq J}\sigma^2_{j,n} + \sum_{j\geq J}(Z^2_j-\sigma^2_{j,n})_+$ where $\sigma^2_{j,n}=\frac{1}{n^2}\sum_i^n\sigma^2_i\phi^2_j(x_i)$ is the variance of the estiated Fourier coefficients.
+
+```{r}
+# standard error of
+z_se = rep(NA, n)
+for (j in 1:n){
+  z_se[j] = sqrt( sum( se**2 * cos.j( j - 1 , x)**2 ) / n**2 )
+}
+
+# NSS Risk
+risk = function(J){
+  R = 0
+  for (i in 1:n){
+      tmp = z[i]**2 - z_se[i]**2
+      R = R + (i <= J)*(z_se[i]**2) + (i > J)*(tmp > 0)*(z[i]**2 - z_se[i]**2)
+  }
+  return(R)
+}
+risk_vec = Vectorize(FUN = risk, vectorize.args = 'J')
+```
+
+Beran and Dumbgen proved in 1998 that the value of $J$ that minimizes the empiricial risk is asymptotically the one that minimizes the real risk: $|R(\hat{J}) - R(J^*)| \rightarrow 0$, where $J^*$ is the $J$ that minimizes the real risk. To find the $J$ to use, we plot the risk in a range of J and choose the first local minimum. 
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+J.seq = seq(1,50)
+ggplot() + 
+  geom_line(aes(x = J.seq, y = risk_vec (J.seq) ), colour = 'dodgerblue2') + 
+  annotate("point", x = 6, y = 5423000, colour = "red", size = 7, alpha = 0.7) +
+  annotate("text", x = 3.5, y=5423000, label = "J = 6") +
+  scale_x_continuous(breaks=c(0, 6, 10, 20, 30, 40, 50)) +
+  labs(x = 'J', y = 'Risk') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ggtitle('Find J to Minimiza Risk')
+  
+```
+
+In our case the J that minimize the Risk is J = 6. given this parameter we can now estimate the function $\hat{f}(x)=\sum_{j=0}^\hat{J}Z_j\phi_j(x)$ that generates our observations $\hat{C_l}$.
+
+```{r}
+J.min = 6
+sum.cos = 0
+for (i in 1:J.min){
+  sum.cos = sum.cos + z[i]*cos.j(i-1, x)
+}
+```
+```{r echo=FALSE, fig.height=6, fig.width=10}
+ggplot() +
+  geom_point(aes(x = x, y = y), col = 'dodgerblue2', alpha = 0.5) +
+  geom_line(aes(x = x, y = sum.cos), col = 'red', size = 0.5, alpha = 0.9) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ggtitle('Observed Power Spectrum and Generating Function') +
+  labs(x = 'Normalized Multipole', y = TeX("C_l" ) ) 
+```
+
+Each observation has a different standard error, however to simplify the model we work out the confidence bands as the standard error would be the same for all the observations and we suppoise that this standard error is equal to the mean of all standard errors.
+
+```{r}
+mean_se = mean(se)
+```
+
+Given the pivot $V_J = \sqrt{n}(L_J-\hat{R}_J)$, it can be shown that its ratio with its standard error $\frac{V_{\hat{J}}}{\hat{\tau}_{\hat{J}}} \approx N(0,1)$ is normal distributed, where $\hat{\tau}^2$ is the estimator of $\mathbb{V}(V_J)$. Thanks to this result, we can calculate a $\textbf{confidence ball}$ for the parameters with a radius eual to $r_n^2 = \hat{R}_{\hat{J}} + \frac{\hat{\tau}z_{\alpha}}{\sqrt{n}}$. In our study the $r_n\approx2500$.
+
+```{r}
+mean_se_vec = rep(mean_se, n)
+J_hat = 6
+
+# Calculate variance of V (tau^2)
+first_term = n - J_hat + J_hat * (1-1/J_hat)**2
+second_term = sum( z[ (J_hat + 1) : (n - J_hat) ]**2 - 1/n * mean_se_vec[ (J_hat + 1) : (n - J_hat) ]**2 ) + 
+  sum(z[ (n - J_hat + 1) : n]**2 - 1/n * mean_se_vec[ (n - J_hat + 1) : n]**2) * (1 - 1/J_hat)**2
+tau_hat.2 = 2 * mean_se**4/n * first_term + 4*mean_se**2 * second_term
+
+# Calculate the radius:
+alpha=0.05
+radius.2 = risk(J_hat) + sqrt(tau_hat.2) * qnorm(1 - alpha)/sqrt(n)
+radius = sqrt(radius.2)
+
+c('radius:', round(radius, 2))
+```
+
+To see how some functions in the confidence ball behave, we generate random parameters $\theta$ whithin the confidence ball.
+
+```{r}
+# Import the theoretical functions value:
+
+conco <- read.csv("~/Google Drive/DS/First Year - Secon Semester/SL/journal club/data/conco.csv") 
+
+# Get only the first 899 values:
+conco = conco$X0
+conco = conco[2:900]
+
+# Create a dataframe with the values of each function generated:
+func_df = tibble(x = x, y = sum.cos, type = 'estimated')
+func_df = rbind( func_df, cbind( cbind( x = x, y = conco ), type = 'theoretical'))
+func_df[,1:2] = sapply(func_df[, 1:2], as.double)
+```
+```{r}
+theta.hat = z[ 1:J_hat ] # we consider the first six, because of J hat
+# A matrix containing in each rows the parameters for a function in the ball
+B = 100 # Number of functions to estimate
+generated_parameters = matrix(data = NA, nrow = B, ncol=length(theta.hat))
+count = 1
+for (b in 1:B){
+  
+  random.parameters = rep(NA, length(theta.hat)) # an array containing the generated parameters
+  
+  # Clean the coeffcients, keep them only under some conditions:
+  check = TRUE
+  while (check){
+    
+    # Generate the parameter by a uniform distribution, trying to remain the ball.
+    for (i in 1:length(theta.hat)){
+      random.parameters[i] = runif(1, min = theta.hat[i]  - 0.5 * radius, max = theta.hat[i] + 0.5 * radius )
+    }
+    
+    # Chcke if the parameters are in the ball:
+    diff.thetas = sum((theta.hat - random.parameters)**2) 
+    if (diff.thetas < radius.2){
+      
+      # Check if the function is positive in all points:
+      sum.cos = 0
+      for (i in 1:6){
+        sum.cos = sum.cos + random.parameters[i] * cos.j(i - 1, x)
+      }
+      if( sum( sum.cos >= 0 ) == n ){
+    
+        # Save the parameters:
+        generated_parameters[b, ] = random.parameters
+        # Add the function values in the df:
+        func_df <-  add_row(func_df, x = x, y = sum.cos,
+                            type = paste('function', as.character(count), sep ='_') )
+        check = FALSE
+        count = count + 1
+      }
+    }
+  }
+}
+```
+```{r echo=FALSE, fig.height=7, fig.width=16, message=FALSE, warning=FALSE}
+ggplot(func_df, aes(x = x, y = y, colour = type)) +
+  geom_line(alpha = 0.5) +
+  geom_line(data = func_df[func_df$type == 'estimated' | func_df$type == 'theoretical', ], aes(x = x, y = y,   linetype = type), size = 1.2, colour = 'black') + 
+  theme( plot.title = element_text(hjust = 0.5))  +
+  guides(colour = FALSE) + 
+  ggtitle('Confidence Ball') +
+  xlab('Normalized Multipole') +
+  ylab( TeX("C_l" ) ) 
+```
+
+
+
+
