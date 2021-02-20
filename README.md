@@ -1,4 +1,5 @@
 # SL Journal Club G17
 ### R code and data ###
 
-space.txt is the file that contains the CMB power spectrum data; conco.csv contains the theoretical power spectrum generated as described in https://camb.readthedocs.io/en/latest/CAMBdemo.html; the .Rmd file contains the R code.
+The project consisted in an application of a non parametric regression technique, i.e. REACT, to the CMB data and the implementation of the confidence ball for such method. 
+The .rmd file contains the code, the .pdf file contains the report and the .csv contains the data.
